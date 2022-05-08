@@ -4,11 +4,13 @@
 #include "object_constants.h"
 #include "behavior_table.h"
 #include "course_table.h"
+#include "game/ingame_menu.h"
 #include "src/game/interaction.h"
 #include "src/engine/math_util.h"
 #include "src/game/memory.h"
 #include "src/game/object_helpers.h"
 #include "pc/debuglog.h"
+#include "src/audio/external.h"
 
 extern s16 gCurrCourseNum, gCurrAreaIndex;
 
@@ -76,12 +78,12 @@ void network_receive_collect_coin(struct Packet* p) {
     packet_read(p, &coinValue, sizeof(s32));
     packet_read(p, &areaIndex, sizeof(s16));
 
+    const void* behavior = get_behavior_from_id(behaviorId);
+
+    // make sure it's valid
+    if (behavior == NULL) { goto SANITY_CHECK_COINS; }
+
     if (areaIndex == gCurrAreaIndex) {
-        const void* behavior = get_behavior_from_id(behaviorId);
-
-        // make sure it's valid
-        if (behavior == NULL) { goto SANITY_CHECK_COINS; }
-
         // find the coin
         float minDist = (behavior == bhvRedCoin) ? 200 : 1000;
         struct Object* coin = find_nearest_coin(behavior, pos, coinValue, minDist);
@@ -89,6 +91,23 @@ void network_receive_collect_coin(struct Packet* p) {
 
         // destroy coin
         coin->oInteractStatus = INT_STATUS_INTERACTED;
+    } else {
+        // If it's a different area, and a red coin
+        if (behavior == bhvRedCoin) {
+            // Hacky way to set Red Coin count for players in a different area
+            gRedCoinsCollected ++;
+
+            // For JP version, play an identical sound for all coins.
+#ifdef VERSION_JP
+            create_sound_spawner(SOUND_GENERAL_RED_COIN);
+#endif
+// On all versions but the JP version, each coin collected plays a higher noise.
+#ifndef VERSION_JP
+            play_sound(SOUND_MENU_COLLECT_RED_COIN
+                        + (((u8) gRedCoinsCollected - 1) << 16),
+                    gGlobalSoundSource);
+#endif
+        }
     }
 
 SANITY_CHECK_COINS:;
